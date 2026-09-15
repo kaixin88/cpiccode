@@ -1,0 +1,76 @@
+name: Build cpiccode Desktop
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Clone opencode source
+        run: git clone --depth 1 https://github.com/anomalyco/opencode.git opencode-src
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Rename and patch source code
+        run: node build-and-patch.js
+
+      - name: Install dependencies
+        working-directory: opencode-src
+        run: bun install
+
+      - name: Build web UI
+        working-directory: opencode-src/packages/app
+        run: bun run build
+
+      - name: Build Electron desktop
+        working-directory: opencode-src/packages/desktop
+        run: bun run build
+
+      - name: Package Windows installer
+        working-directory: opencode-src/packages/desktop
+        run: bun run package:win
+
+      - name: Find installer
+        shell: pwsh
+        working-directory: opencode-src
+        run: |
+          Write-Host "=== Desktop dist ==="
+          if (Test-Path "packages/desktop/dist") {
+            Get-ChildItem "packages/desktop/dist" -Recurse -Filter "*.exe" | ForEach-Object {
+              Write-Host " (0 MB)"
+            }
+            Get-ChildItem "packages/desktop/dist" -Recurse -Filter "*.nsis" | ForEach-Object {
+              Write-Host " (0 MB)"
+            }
+            Get-ChildItem "packages/desktop/dist" -Recurse -Filter "*.yml" | ForEach-Object {
+              Write-Host ""
+            }
+          } else {
+            Write-Host "dist not found, checking other locations..."
+            Get-ChildItem "packages/desktop" -Directory | ForEach-Object { Write-Host .FullName }
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpiccode-desktop-windows
+          path: |
+            opencode-src/packages/desktop/dist/*.exe
+            opencode-src/packages/desktop/dist/*.yml
+          if-no-files-found: error
+          retention-days: 7
